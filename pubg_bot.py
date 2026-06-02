@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import uuid
+import os
 import aiohttp
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,10 +12,10 @@ from telegram.ext import (
 import threading
 import uvicorn
 
-BOT_TOKEN       = "ضع_توكن_البوت_هنا"
-ADMIN_ID        = 123456789
-MOYASAR_API_KEY = "ضع_مفتاح_moyasar_هنا"
-WEBHOOK_BASE    = "https://your-server.com"
+BOT_TOKEN       = os.environ.get("BOT_TOKEN", "")
+ADMIN_ID        = int(os.environ.get("ADMIN_ID", "0"))
+MOYASAR_API_KEY = os.environ.get("MOYASAR_API_KEY", "")
+WEBHOOK_BASE    = os.environ.get("WEBHOOK_BASE", "")
 
 PRODUCTS = {
     "60uc":   {"name": "60 UC",   "price": 10},
@@ -26,11 +27,7 @@ PRODUCTS = {
 }
 
 pending_orders = {}
-SELECT_PRODUCT, ENTER_PLAYER_ID, WAITING_PAYMENT = range(3)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-webhook_app = FastAPI()
-telegram_app = None
+SELECT_PRODUCT,
 async def create_moyasar_payment(amount_riyals, description, order_id):
     url = "https://api.moyasar.com/v1/payments"
     payload = {
@@ -46,13 +43,13 @@ async def create_moyasar_payment(amount_riyals, description, order_id):
             data = await resp.json()
             return {
                 "payment_id": data.get("id"),
-                "payment_url": data.get("source", {}).get("transaction_url") or data.get("_links", {}).get("payment_page", {}).get("href", "")
+                "payment_url": data.get("source", {}).get("transaction_url", "")
             }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🛒 اشتري شدات", callback_data="buy")]]
     await update.message.reply_text(
-        "🎮 *أهلاً في متجر شدات ببجي*\n\nنوفر شحن UC بأسرع وقت!\nالدفع تلقائي عبر مدى / STC Pay / بطاقة 💳\n\nاضغط الزر لتبدأ 👇",
+        "🎮 *أهلاً في متجر شدات ببجي*\n\nالدفع تلقائي عبر مدى / STC Pay 💳\n\nاضغط الزر لتبدأ 👇",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -75,10 +72,11 @@ async def select_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["product"] = product_key
     product = PRODUCTS[product_key]
     await query.edit_message_text(
-        f"✅ اخترت: *{product['name']}* بسعر *{product['price']} ريال*\n\n🎮 *أرسل لي ID لاعبك في ببجي:*\nمثال: `5123456789`",
+        f"✅ اخترت: *{product['name']}* بسعر *{product['price']} ريال*\n\n🎮 *أرسل ID لاعبك في ببجي:*\nمثال: `5123456789`",
         parse_mode="Markdown"
     )
     return ENTER_PLAYER_ID
+
 async def enter_player_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player_id = update.message.text.strip()
     context.user_data["player_id"] = player_id
@@ -86,12 +84,11 @@ async def enter_player_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_key = context.user_data["product"]
     product = PRODUCTS[product_key]
     order_id = str(uuid.uuid4())
-    context.user_data["order_id"] = order_id
     await update.message.reply_text("⏳ جاري إنشاء رابط الدفع...")
     try:
         result = await create_moyasar_payment(
             amount_riyals=product["price"],
-            description=f"شحن {product['name']} - ببجي - ID: {player_id}",
+            description=f"شحن {product['name']} ببجي ID:{player_id}",
             order_id=order_id
         )
         payment_id = result["payment_id"]
@@ -104,24 +101,23 @@ async def enter_player_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         keyboard = [[InlineKeyboardButton("💳 ادفع الآن", url=payment_url)]]
         await update.message.reply_text(
-            f"📋 *ملخص الطلب:*\n\n🎮 الكمية: {product['name']}\n💰 السعر: {product['price']} ريال\n🆔 ID اللاعب: `{player_id}`\n\nاضغط للدفع 👇",
+            f"📋 *ملخص الطلب:*\n\n🎮 {product['name']}\n💰 {product['price']} ريال\n🆔 `{player_id}`\n\nاضغط للدفع 👇",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
-        logger.error(f"Moyasar error: {e}")
-        await update.message.reply_text("❌ حدث خطأ. تواصل مع الدعم.")
+        logger.error(f"Error: {e}")
+        await update.message.reply_text("❌ خطأ في الدفع، تواصل مع الدعم.")
     return WAITING_PAYMENT
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("❌ تم الإلغاء. اكتب /start للبدء من جديد.")
+        await query.edit_message_text("❌ تم الإلغاء. /start للبدء من جديد.")
     else:
-        await update.message.reply_text("❌ تم الإلغاء. اكتب /start للبدء من جديد.")
+        await update.message.reply_text("❌ تم الإلغاء. /start للبدء من جديد.")
     return ConversationHandler.END
-
 @webhook_app.post("/moyasar-webhook")
 async def moyasar_webhook(request: Request):
     data = await request.json()
@@ -132,7 +128,7 @@ async def moyasar_webhook(request: Request):
         product = PRODUCTS[order["product_key"]]
         await telegram_app.bot.send_message(
             chat_id=order["user_id"],
-            text=f"🎉 *تم تأكيد دفعك تلقائياً!*\n\n✅ {product['name']} سيتم شحنها لـ `{order['player_id']}` خلال دقائق!\n\nشكراً لتسوقك معنا 🎮",
+            text=f"🎉 *تم تأكيد دفعك!*\n\n✅ {product['name']} سيتم شحنها لـ `{order['player_id']}` خلال دقائق!",
             parse_mode="Markdown"
         )
         await telegram_app.bot.send_message(
