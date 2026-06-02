@@ -93,7 +93,7 @@ def run_server():
 
 def main():
     global telegram_app
-    telegram_app = Application.builder().token(BOT_TOKEN).build()
+    telegram_app = Application.builder().token(BOT_TOKEN).updater(None)build()
     conv = ConversationHandler(entry_points=[CallbackQueryHandler(show_products, pattern="^buy$")], states={SELECT_PRODUCT: [CallbackQueryHandler(select_product, pattern="^product_")], ENTER_PLAYER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_player_id)], WAITING_PAYMENT: []}, fallbacks=[CallbackQueryHandler(cancel, pattern="^cancel$")])
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(conv)
