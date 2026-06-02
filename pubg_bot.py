@@ -1,4 +1,4 @@
-import logging, uuid, os, aiohttp, threading, uvicorn
+import logging, uuid, os, aiohttp, threading, uvicorn, asyncio
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
@@ -99,9 +99,7 @@ def main():
     telegram_app.add_handler(conv)
     threading.Thread(target=run_server, daemon=True).start()
     print("✅ البوت شغّال!")
-    import asyncio
-asyncio.get_event_loop().run_until_complete(telegram_app.run_polling())
-
+    telegram_app.run_polling()  # ✅ داخل main
 
 if __name__ == "__main__":
     main()
